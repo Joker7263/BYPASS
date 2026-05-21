@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>TV Stream Hub | Live Channels</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none; /* avoid accidental text selection on UI */
+        }
+        body {
+            margin: 0;
+            background-color: #0a0c10;
+            font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            color: #eee;
+        }
+        /* video container background */
+        #video-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 1;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: black;
+        }
+        /* audio-only overlay */
+        #audio-fallback {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(12px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 15;
+            text-align: center;
+            font-family: monospace;
+        }
+        #audio-fallback h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 0 0 10px cyan;
+        }
+        /* main UI layer */
+        #ui-layer {
+            position: relative;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: radial-gradient(circle at 20% 30%, rgba(10,12,16,0.88) 0%, rgba(5,7,12,0.96) 100%);
+            backdrop-filter: blur(6px);
+            transition: opacity 0.3s ease, visibility 0.2s;
+            padding: 30px 40px 40px 40px;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        #ui-layer.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            backdrop-filter: blur(0px);
+        }
+        /* header bar */
+        #header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 0 15px 10px 15px;
+            font-weight: 500;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(97,218,251,0.3);
+            margin-bottom: 20px;
+        }
+        #channel-count {
+            background: #1e2a3a;
+            padding: 6px 16px;
+            border-radius: 40px;
+            font-size: 0.9rem;
+        }
+        #clock {
+            font-family: monospace;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #61dafb;
+        }
+        /* search */
+        #search-section {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+        #search-box {
+            width: 70%;
+            max-width: 500px;
+            background: rgba(20, 25, 35, 0.8);
+            border: 2px solid #2c3440;
+            border-radius: 60px;
+            padding: 14px 28px;
+            color: white;
+            font-size: 1.1rem;
+            outline: none;
+            text-align: center;
+            transition: 0.2s;
+            font-weight: 500;
+        }
+        #search-box:focus {
+            border-color: #61dafb;
+            box-shadow: 0 0 18px #61dafb55;
+            background: #141a22;
+        }
+        /* channel grid */
+        #channel-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 22px;
+            overflow-y: auto;
+            padding: 15px 10px 20px 10px;
+            align-content: start;
+        }
+        .channel-card {
+            background: #1c212a;
+            border-radius: 28px;
+            padding: 20px 12px;
+            text-align: center;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            outline: none;
+        }
+        .channel-card.filtered-out {
+            display: none;
+        }
+        .channel-card:hover, .channel-card:focus {
+            transform: scale(1.02);
+            background: #2a3140;
+            border-color: #61dafb;
+            box-shadow: 0 15px 25px rgba(0,0,0,0.5);
+        }
+        .logo-box {
+            width: 85px;
+            height: 85px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.3);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        .channel-card img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .letter-fallback {
+            font-size: 2.8rem;
+            font-weight: bold;
+            color: #61dafb;
+            text-transform: uppercase;
+        }
+        .channel-card span {
+            font-size: 0.95rem;
+            font-weight: 600;
+            width: 100%;
+            white-space: nowrap;
+            overflow-x: hidden;
+            text-overflow: ellipsis;
+            padding: 0 4px;
+        }
+        /* custom card style (kofi) */
+        .custom-card {
+            background: linear-gradient(145deg, #2a1e2c, #1a121f);
+            border: 1px solid #ffb347;
+        }
+        .custom-card span {
+            color: #ffdd99;
+        }
+        /* loader */
+        #loader {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 30;
+            display: none;
+            background: #000000aa;
+            padding: 20px;
+            border-radius: 80px;
+            backdrop-filter: blur(4px);
+        }
+        .spinner {
+            width: 55px;
+            height: 55px;
+            border: 5px solid #2c3e4e;
+            border-top: 5px solid #61dafb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* scrollbar */
+        #channel-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+        #channel-grid::-webkit-scrollbar-track {
+            background: #1a1e26;
+            border-radius: 10px;
+        }
+        #channel-grid::-webkit-scrollbar-thumb {
+            background: #3a4458;
+            border-radius: 10px;
+        }
+        @media (max-width: 650px) {
+            #ui-layer { padding: 20px 20px 30px; }
+            .channel-card { padding: 15px 6px; }
+            .logo-box { width: 65px; height: 65px; }
+        }
+    </style>
+    <!-- Shaka Player + UI -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.14.28/shaka-player.ui.min.js"></script>
+</head>
+<body>
+
+<div id="loader"><div class="spinner"></div></div>
+
+<div id="video-container">
+    <video id="video" autoplay playsinline crossorigin="anonymous"></video>
+    <div id="audio-fallback">
+        <h2 id="fallback-name">Audio Only Mode</h2>
+        <p>📻  stream is playing audio only  ▶️  enjoy the show</p>
+    </div>
+</div>
+
+<div id="ui-layer">
+    <div id="header-info">
+        <span id="channel-count">📡 loading channels...</span>
+        <span id="clock">--:--</span>
+    </div>
+    <div id="search-section">
+        <input type="text" id="search-box" placeholder="🔍 Search channel ..." autocomplete="off" tabindex="0">
+    </div>
+    <div id="channel-grid" tabindex="-1"></div>
+</div>
+
+<script>
+    // ---------- GLOBALS ----------
+    let player = null;
+    let ui = null;
+    let allChannelsArray = [];      // store raw channel objects from json
+    let currentVideoElement = null;
+    let lastFocusedCard = null;
+    const videoEl = document.getElementById('video');
+    const videoContainer = document.getElementById('video-container');
+    const uiLayer = document.getElementById('ui-layer');
+    const loaderDiv = document.getElementById('loader');
+    const searchInput = document.getElementById('search-box');
+    const gridContainer = document.getElementById('channel-grid');
+    const fallbackDiv = document.getElementById('audio-fallback');
+    const fallbackNameSpan = document.getElementById('fallback-name');
+    const channelCountSpan = document.getElementById('channel-count');
+
+    // Helper: show/hide UI and handle fullscreen exit on show
+    function setUIVisible(visible) {
+        if (visible) {
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(e=>console.warn);
+            }
+            uiLayer.classList.remove('hidden');
+            // restore focus to last card or search
+            setTimeout(() => {
+                if (lastFocusedCard && document.body.contains(lastFocusedCard)) {
+                    lastFocusedCard.focus();
+                } else {
+                    searchInput.focus();
+                }
+            }, 30);
+            window.history.pushState({ ui: true }, '');
+        } else {
+            uiLayer.classList.add('hidden');
+        }
+    }
+
+    // load channel from object (manifest + DRM if needed)
+    async function loadChannel(channelObj) {
+        try {
+            loaderDiv.style.display = 'flex';
+            fallbackDiv.style.display = 'none';
+            if (player) {
+                await player.unload();
+            }
+            // clear drm keys before new config
+            player.configure({ drm: { clearKeys: {} } });
+
+            // handle any existing drm keys (simplified: if channel has licenseKeys array)
+            if (channelObj.licenseKeys && channelObj.licenseKeys.length) {
+                const keyMap = {};
+                for (let k of channelObj.licenseKeys) {
+                    if (k.keyId && k.key) keyMap[k.keyId] = k.key;
+                }
+                if (Object.keys(keyMap).length) {
+                    player.configure({ drm: { clearKeys: keyMap } });
+                }
+            } else if (channelObj.drm && typeof channelObj.drm === 'object') {
+                // some entries have drm { "keyid": "key" }
+                const directKeys = {};
+                for (const [kid, kvalue] of Object.entries(channelObj.drm)) {
+                    if (kid && kvalue) directKeys[kid] = kvalue;
+                }
+                if (Object.keys(directKeys).length) {
+                    player.configure({ drm: { clearKeys: directKeys } });
+                }
+            }
+
+            // Set headers if needed (simple approach: shaka can't set arbitrary headers easily but we can attach via requestFilter)
+            if (channelObj.headers && typeof channelObj.headers === 'object') {
+                const headersToApply = channelObj.headers;
+                player.getNetworkingEngine().registerRequestFilter((type, request) => {
+                    if (type === shaka.net.NetworkingEngine.RequestType.MANIFEST || type === shaka.net.NetworkingEngine.RequestType.SEGMENT) {
+                        for (const [hKey, hVal] of Object.entries(headersToApply)) {
+                            request.headers[hKey] = hVal;
+                        }
+                    }
+                });
+            }
+
+            let manifestUrl = channelObj.streamUrl;
+            if (!manifestUrl && channelObj.standbyUrls && channelObj.standbyUrls.length) {
+                manifestUrl = channelObj.standbyUrls[0];
+            }
+            if (!manifestUrl) throw new Error('No stream URL found');
+
+            await player.load(manifestUrl);
+            loaderDiv.style.display = 'none';
+            // check audio-only mode
+            setTimeout(() => {
+                if (player.isAudioOnly()) {
+                    fallbackNameSpan.innerText = channelObj.name || 'Live Audio';
+                    fallbackDiv.style.display = 'flex';
+                } else {
+                    fallbackDiv.style.display = 'none';
+                }
+            }, 600);
+        } catch (err) {
+            console.error('playback error', err);
+            loaderDiv.style.display = 'none';
+            setUIVisible(true);
+            alert(`Cannot play: ${channelObj.name || 'channel'}\n${err.message}`);
+        }
+    }
+
+    // Build grid from channel list
+    function buildChannelGrid(channels) {
+        gridContainer.innerHTML = '';
+        // ---- Ko-fi support special card (extra) ----
+        const kofiCard = document.createElement('div');
+        kofiCard.className = 'channel-card custom-card';
+        kofiCard.tabIndex = 0;
+        kofiCard.innerHTML = `
+            <div class="logo-box">
+                <span class="letter-fallback" style="font-size:1.8rem;">☕</span>
+            </div>
+            <span>❤️ Support on Ko-fi</span>
+        `;
+        kofiCard.onclick = () => window.open('https://ko-fi.com/acevin', '_blank');
+        kofiCard.onkeydown = (e) => { if(e.key === 'Enter') kofiCard.click(); };
+        gridContainer.appendChild(kofiCard);
+
+        channels.forEach((ch, idx) => {
+            const card = document.createElement('div');
+            card.className = 'channel-card';
+            card.tabIndex = 0;
+            card.setAttribute('data-name', (ch.name || '').toLowerCase());
+            // logo handling: use logoLocal but we don't have actual images, we'll show first letter
+            const channelName = ch.name || 'Channel';
+            const firstLetter = channelName.charAt(0).toUpperCase();
+            const logoHtml = `
+                <div class="logo-box">
+                    <div class="letter-fallback">${firstLetter}</div>
+                </div>
+            `;
+            card.innerHTML = `${logoHtml}<span>${channelName}</span>`;
+            card.onclick = async () => {
+                lastFocusedCard = card;
+                // enter fullscreen first and hide UI
+                try {
+                    if (videoContainer.requestFullscreen) await videoContainer.requestFullscreen();
+                } catch(e) { /* ignore if fails */ }
+                setUIVisible(false);
+                // build full channel object from raw data
+                const targetChannel = allChannelsArray.find(c => c.name === ch.name);
+                if (targetChannel) await loadChannel(targetChannel);
+                else console.warn('channel data missing');
+            };
+            card.onkeydown = (e) => {
+                if(e.key === 'Enter') card.click();
+            };
+            gridContainer.appendChild(card);
+        });
+        updateChannelCountDisplay();
+    }
+
+    function updateChannelCountDisplay() {
+        const visible = Array.from(gridContainer.querySelectorAll('.channel-card:not(.filtered-out)')).length;
+        channelCountSpan.innerText = `📺 ${visible} channels`;
+    }
+
+    function filterChannels(searchTerm) {
+        const term = searchTerm.trim().toLowerCase();
+        const cards = gridContainer.querySelectorAll('.channel-card:not(.custom-card)');
+        cards.forEach(card => {
+            const nameAttr = card.getAttribute('data-name') || '';
+            if (term === '' || nameAttr.includes(term)) {
+                card.classList.remove('filtered-out');
+            } else {
+                card.classList.add('filtered-out');
+            }
+        });
+        updateChannelCountDisplay();
+    }
+
+    // Extract stream info from JSON entry (handle custom fields: streamUrl, drm, headers, standby)
+    function normalizeChannelFromJson(raw) {
+        // raw is from the JSON array items
+        const copy = { ...raw };
+        copy.licenseKeys = [];
+        if (copy.drm && typeof copy.drm === 'object') {
+            // convert drm object to licenseKeys array
+            try {
+                for (const [kid, keyValue] of Object.entries(copy.drm)) {
+                    if (kid && keyValue) copy.licenseKeys.push({ keyId: kid, key: keyValue });
+                }
+            } catch(e){}
+        }
+        // ensure streamUrl
+        if (!copy.streamUrl && copy.standbyUrls && copy.standbyUrls.length) copy.streamUrl = copy.standbyUrls[0];
+        return copy;
+    }
+
+    // ---------- FETCH & INITIALIZE ----------
+    async function fetchAndInit() {
+        try {
+            loaderDiv.style.display = 'flex';
+            // 1) fetch json from the provided github raw URL
+            const jsonUrl = 'https://raw.githubusercontent.com/Joker7263/Nba-live/refs/heads/main/all%20channel.json';
+            const response = await fetch(jsonUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const jsonData = await response.json();
+
+            // structure: { top5: [], channels: [] }
+            let channelsList = [];
+            if (jsonData.channels && Array.isArray(jsonData.channels)) {
+                channelsList = jsonData.channels;
+            } else if (Array.isArray(jsonData)) {
+                channelsList = jsonData;
+            } else {
+                throw new Error('JSON does not contain channels array');
+            }
+
+            allChannelsArray = channelsList.map(ch => normalizeChannelFromJson(ch));
+            // filter out any without streamUrl
+            const validChannels = allChannelsArray.filter(ch => ch.streamUrl && (ch.streamUrl.startsWith('http') || ch.streamUrl.startsWith('https') || ch.streamUrl.startsWith('rtmp')));
+            if (validChannels.length === 0 && allChannelsArray.length) console.warn('No valid stream url found, showing all entries anyway');
+            const channelsToShow = validChannels.length ? validChannels : allChannelsArray;
+
+            // init shaka player
+            shaka.polyfill.installAll();
+            if (shaka.Player.isBrowserSupported()) {
+                player = new shaka.Player(videoEl);
+                ui = new shaka.ui.Overlay(player, videoContainer, videoEl);
+                ui.configure({
+                    'controlPanelElements': ['play_pause', 'time_and_duration', 'spacer', 'quality', 'fullscreen'],
+                    'overflowMenuButtons': ['quality']
+                });
+                // error handling
+                player.addEventListener('error', (event) => {
+                    console.error('shaka error', event.detail);
+                    if (uiLayer.classList.contains('hidden')) {
+                        setUIVisible(true);
+                        alert('Playback error. Return to channel list.');
+                    }
+                });
+                player.addEventListener('loaded', () => {
+                    if (player.isAudioOnly()) {
+                        if (player.getManifestUri()) {
+                            const activeChannel = allChannelsArray.find(c => c.streamUrl === player.getManifestUri());
+                            if (activeChannel) fallbackNameSpan.innerText = activeChannel.name || 'Audio Stream';
+                            fallbackDiv.style.display = 'flex';
+                        }
+                    } else {
+                        fallbackDiv.style.display = 'none';
+                    }
+                });
+            } else {
+                alert('Your browser does not support Shaka Player');
+                loaderDiv.style.display = 'none';
+                return;
+            }
+
+            // build grid using channel names from the valid data
+            const displayChannels = channelsToShow.map(c => ({ name: c.name, original: c }));
+            buildChannelGrid(displayChannels.map(c => ({ name: c.name })));
+            loaderDiv.style.display = 'none';
+            setUIVisible(true);
+        } catch (err) {
+            console.error('Initialization failed:', err);
+            loaderDiv.style.display = 'none';
+            gridContainer.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px;">⚠️ Failed to load channels.<br>${err.message}</div>`;
+            channelCountSpan.innerText = '⚠️ Error';
+        }
+    }
+
+    // ---- Keyboard navigation and global events ----
+    document.addEventListener('keydown', (e) => {
+        // ESC or backspace: show UI if hidden
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+            if (uiLayer.classList.contains('hidden')) {
+                e.preventDefault();
+                setUIVisible(true);
+            }
+            return;
+        }
+
+        if (uiLayer.classList.contains('hidden')) return; // fullscreen mode ignores grid nav
+
+        const activeEl = document.activeElement;
+        const allCards = Array.from(gridContainer.querySelectorAll('.channel-card:not(.filtered-out)'));
+        if (allCards.length === 0) return;
+
+        // arrow navigation inside grid
+        if (activeEl && activeEl.classList && activeEl.classList.contains('channel-card')) {
+            let currentIdx = allCards.indexOf(activeEl);
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                let nextIdx = currentIdx + 1;
+                if (nextIdx < allCards.length) allCards[nextIdx].focus();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                let prevIdx = currentIdx - 1;
+                if (prevIdx >= 0) allCards[prevIdx].focus();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const currentRect = activeEl.getBoundingClientRect();
+                let bestNext = null;
+                let minDiff = Infinity;
+                for (let card of allCards) {
+                    const rect = card.getBoundingClientRect();
+                    if (rect.top > currentRect.bottom - 5) {
+                        const diffX = Math.abs(rect.left - currentRect.left);
+                        if (diffX < minDiff) {
+                            minDiff = diffX;
+                            bestNext = card;
+                        }
+                    }
+                }
+                if (bestNext) bestNext.focus();
+                else if (allCards.length) allCards[0].focus();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const currentRect = activeEl.getBoundingClientRect();
+                let bestPrev = null;
+                let minDiff = Infinity;
+                for (let card of allCards) {
+                    const rect = card.getBoundingClientRect();
+                    if (rect.bottom < currentRect.top + 5) {
+                        const diffX = Math.abs(rect.left - currentRect.left);
+                        if (diffX < minDiff) {
+                            minDiff = diffX;
+                            bestPrev = card;
+                        }
+                    }
+                }
+                if (bestPrev) bestPrev.focus();
+                else {
+                    searchInput.focus();
+                }
+            }
+        } else if (activeEl === searchInput && e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (allCards.length) allCards[0].focus();
+        }
+    });
+
+    // search filtering
+    searchInput.addEventListener('input', (e) => {
+        filterChannels(e.target.value);
+    });
+
+    // clock update
+    function updateClock() {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        document.getElementById('clock').innerText = timeStr;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // handle popstate (back button from fullscreen)
+    window.addEventListener('popstate', () => {
+        if (uiLayer.classList.contains('hidden')) {
+            setUIVisible(true);
+        }
+    });
+
+    // start everything
+    fetchAndInit();
+</script>
+</body>
+</html>
