@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Ultimate IPTV Player - Full DRM + Proxy Support</title>
+    <!-- Shaka Player for DASH + ClearKey DRM -->
+    <script src="https://cdn.jsdelivr.net/npm/shaka-player@4.11.2/dist/shaka-player.compiled.js"></script>
+    <!-- HLS.js for advanced HLS playback -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            aspect-ratio: 16 / 9;
+            width: 100%;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Video Controls Overlay */
+        .video-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        .quality-btn, .proxy-btn {
+            background: rgba(0,0,0,0.7);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            backdrop-filter: blur(5px);
+        }
+
+        .quality-btn:hover, .proxy-btn:hover {
+            background: rgba(0,0,0,0.9);
+        }
+
+        .channel-info {
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 1px solid #333;
+        }
+
+        .channel-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .channel-category {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .proxy-status {
+            font-size: 0.7rem;
+            color: #00ff88;
+            margin-top: 4px;
+        }
+
+        /* Channel List */
+        .channel-list-container {
+            flex: 1;
+            overflow-y: auto;
+            background: #0f0f0f;
+        }
+
+        .channel-list {
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+        }
+
+        .channel-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            margin: 4px 0;
+            background: #1e1e2e;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .channel-item:hover {
+            background: #2a2a3e;
+            transform: translateX(5px);
+        }
+
+        .channel-item.active {
+            background: #4a4a6e;
+            border-left: 4px solid #00ff88;
+        }
+
+        .channel-logo {
+            width: 40px;
+            height: 40px;
+            background: #333;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .channel-details {
+            flex: 1;
+        }
+
+        .channel-title {
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .channel-category-badge {
+            font-size: 0.7rem;
+            color: #aaa;
+        }
+
+        .drm-badge, .geo-badge {
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+
+        .drm-badge {
+            background: #ff6b6b;
+        }
+
+        .geo-badge {
+            background: #ffa500;
+        }
+
+        /* Search Bar */
+        .search-bar {
+            padding: 12px;
+            background: #1a1a2e;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 15px;
+            background: #2a2a3e;
+            border: 1px solid #3a3a4e;
+            border-radius: 25px;
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #00ff88;
+        }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #333;
+            border-top-color: #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            color: white;
+            font-size: 14px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Error Message */
+        .error-message {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: #ff4444;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+            z-index: 1000;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* Proxy Settings Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: #1e1e2e;
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 16px;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            background: #2a2a3e;
+            border: 1px solid #3a3a4e;
+            border-radius: 8px;
+            color: white;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-buttons button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .save-btn {
+            background: #00ff88;
+            color: #000;
+        }
+
+        .cancel-btn {
+            background: #333;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-container">
+            <video id="video" controls autoplay playsinline></video>
+            <div class="video-controls">
+                <button class="proxy-btn" id="proxyBtn">🌐 Proxy: OFF</button>
+                <button class="quality-btn" id="qualityBtn">⚙️ Auto</button>
+            </div>
+        </div>
+        
+        <div class="channel-info">
+            <div class="channel-name" id="currentChannelName">Select a channel</div>
+            <div class="channel-category" id="currentChannelCategory"></div>
+            <div class="proxy-status" id="proxyStatus"></div>
+        </div>
+
+        <div class="search-bar">
+            <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search channels...">
+        </div>
+
+        <div class="channel-list-container">
+            <div class="channel-list" id="channelList"></div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Loading stream...</div>
+    </div>
+
+    <div class="error-message" id="errorMessage"></div>
+
+    <!-- Proxy Settings Modal -->
+    <div class="modal" id="proxyModal">
+        <div class="modal-content">
+            <h3>🌐 Proxy Settings</h3>
+            <p>Use a proxy to bypass geo-restrictions (e.g., Astro channels)</p>
+            <input type="text" id="proxyUrlInput" placeholder="http://localhost:8080 or http://proxy-server:port">
+            <div class="modal-buttons">
+                <button class="save-btn" id="saveProxyBtn">Save</button>
+                <button class="cancel-btn" id="cancelProxyBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== CONFIGURATION ====================
+        let shakaPlayer = null;
+        let hls = null;
+        let currentChannel = null;
+        let allChannels = [];
+        let video = document.getElementById('video');
+        let proxyConfig = null;
+        
+        // Try to load proxy config from localStorage
+        try {
+            const savedProxy = localStorage.getItem('proxyConfig');
+            if (savedProxy) {
+                proxyConfig = JSON.parse(savedProxy);
+                document.getElementById('proxyBtn').textContent = `🌐 Proxy: ON`;
+                document.getElementById('proxyStatus').textContent = `Using proxy: ${proxyConfig.url}`;
+            }
+        } catch(e) {}
+
+        // ==================== HELPER FUNCTIONS ====================
+        function showLoading(text = 'Loading stream...') {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        async function safePlay(videoElement) {
+            try {
+                await videoElement.play();
+            } catch (err) {
+                console.warn("Auto-play prevented:", err);
+                showError("Click play button to start (autoplay blocked)");
+            }
+        }
+
+        // Destroy existing players
+        function destroyPlayers() {
+            if (shakaPlayer) {
+                shakaPlayer.destroy();
+                shakaPlayer = null;
+            }
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+            video.pause();
+            video.src = '';
+            video.load();
+        }
+
+        // ==================== PROXY SUPPORT ====================
+        function getProxiedUrl(url) {
+            if (!proxyConfig || !proxyConfig.url) return url;
+            
+            // Only proxy specific domains that are geo-restricted
+            const geoDomains = ['linearjitp-playback.astro.com.my', 'astro.com.my', 'abslive.akamaized.net'];
+            const needsProxy = geoDomains.some(domain => url.includes(domain));
+            
+            if (needsProxy) {
+                return `${proxyConfig.url}/proxy/${encodeURIComponent(url)}`;
+            }
+            return url;
+        }
+
+        // ==================== SHARA PLAYER (DASH + ClearKey DRM) ====================
+        async function loadWithShaka(channel) {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    if (!window.shaka) {
+                        reject(new Error("Shaka not loaded"));
+                        return;
+                    }
+
+                    shaka.polyfill.installAll();
+                    shakaPlayer = new shaka.Player(video);
+
+                    // Configure DRM for Clear Key if present
+                    if (channel.drm) {
+                        const drmConfig = {};
+                        const keys = {};
+                        
+                        // Handle key-value pairs
+                        for (const [keyId, key] of Object.entries(channel.drm)) {
+                            if (keyId !== 'keys' && keyId !== 'type' && typeof key === 'string') {
+                                keys[keyId] = key;
+                            }
+                        }
+                        
+                        // Handle keys array format (like in ROCK X Stream)
+                        if (channel.drm.keys && Array.isArray(channel.drm.keys)) {
+                            channel.drm.keys.forEach(keyObj => {
+                                if (keyObj.kid && keyObj.k) {
+                                    keys[keyObj.kid] = keyObj.k;
+                                }
+                            });
+                        }
+                        
+                        if (Object.keys(keys).length > 0) {
+                            drmConfig.clearKeys = keys;
+                            console.log('Clear Key DRM configured for:', channel.name);
+                        }
+                        
+                        if (Object.keys(drmConfig).length > 0) {
+                            shakaPlayer.configure({ drm: drmConfig });
+                        }
+                    }
+
+                    // Configure proxy for geo-restricted streams
+                    if (proxyConfig && proxyConfig.url) {
+                        shakaPlayer.configure({
+                            networking: {
+                                proxy: proxyConfig.url
+                            }
+                        });
+                    }
+
+                    // Set custom headers if provided
+                    if (channel.headers) {
+                        shakaPlayer.configure({
+                            networking: {
+                                filters: {
+                                    request: (type, request) => {
+                                        if (channel.headers) {
+                                            let headers = channel.headers;
+                                            if (typeof headers === 'string') {
+                                                headers = headers.split('&').reduce((acc, h) => {
+                                                    const [key, val] = h.split('=');
+                                                    if (key && val) acc[key] = val;
+                                                    return acc;
+                                                }, {});
+                                            }
+                                            for (const [key, value] of Object.entries(headers)) {
+                                                request.headers[key] = value;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    // Handle player errors
+                    shakaPlayer.addEventListener('error', (event) => {
+                        console.error('Shaka error:', event.detail);
+                        reject(new Error(event.detail.message));
+                    });
+
+                    await shakaPlayer.load(channel.streamUrl);
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        }
+
+        // ==================== HLS.JS PLAYER (HLS streams) ====================
+        async function loadWithHlsJs(channel) {
+            return new Promise((resolve, reject) => {
+                if (!Hls.isSupported()) {
+                    reject(new Error("HLS.js not supported"));
+                    return;
+                }
+
+                if (hls) {
+                    hls.destroy();
+                }
+
+                hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 60,
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60,
+                    liveSyncDurationCount: 3,
+                    liveMaxLatencyDurationCount: 10
+                });
+
+                let url = channel.streamUrl;
+                if (proxyConfig && proxyConfig.url) {
+                    const geoDomains = ['kstv.us', 'xxip9.top', 'astro.com.my'];
+                    if (geoDomains.some(d => url.includes(d))) {
+                        url = `${proxyConfig.url}/proxy/${encodeURIComponent(url)}`;
+                    }
+                }
+
+                hls.loadSource(url);
+                hls.attachMedia(video);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    resolve();
+                });
+
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        reject(new Error(`HLS error: ${data.type}`));
+                    }
+                });
+            });
+        }
+
+        // ==================== TRY MULTIPLE URLs (for token expiration) ====================
+        async function tryMultipleUrls(channel) {
+            const urlsToTry = [channel.streamUrl];
+            
+            // Add standby URLs if available
+            if (channel.standbyUrls && Array.isArray(channel.standbyUrls)) {
+                urlsToTry.push(...channel.standbyUrls);
+            }
+            
+            // Also try to generate a fresh URL by removing expired params
+            if (channel.streamUrl.includes('AuthInfo=')) {
+                const baseUrl = channel.streamUrl.split('?')[0];
+                urlsToTry.push(baseUrl);
+            }
+            
+            for (const url of urlsToTry) {
+                try {
+                    console.log(`Trying URL: ${url.substring(0, 100)}...`);
+                    const testChannel = { ...channel, streamUrl: url };
+                    
+                    if (url.includes('.mpd')) {
+                        await loadWithShaka(testChannel);
+                    } else if (url.includes('.m3u8')) {
+                        await loadWithHlsJs(testChannel);
+                    } else {
+                        video.src = url;
+                        await safePlay(video);
+                    }
+                    return true;
+                } catch (err) {
+                    console.warn(`URL failed: ${err.message}`);
+                    continue;
+                }
+            }
+            return false;
+        }
+
+        // ==================== MAIN LOAD FUNCTION ====================
+        async function loadChannel(channel) {
+            try {
+                showLoading(`Loading ${channel.name}...`);
+                destroyPlayers();
+                currentChannel = channel;
+
+                // Update UI
+                document.getElementById('currentChannelName').textContent = channel.name;
+                const categoryText = `${channel.category || 'General'} ${channel.drm ? '🔒 DRM Protected' : '🔓 Free'}`;
+                document.getElementById('currentChannelCategory').textContent = categoryText;
+
+                // Skip YouTube channels
+                if (channel.type === 'youtube-channel') {
+                    showError('YouTube channels require iframe embed. Please use YouTube app or website.');
+                    hideLoading();
+                    return;
+                }
+
+                // Skip RTMP streams
+                if (channel.streamUrl && channel.streamUrl.startsWith('rtmp')) {
+                    showError('RTMP streams are not supported in web browsers');
+                    hideLoading();
+                    return;
+                }
+
+                // Try multiple URLs (for token expiration handling)
+                const success = await tryMultipleUrls(channel);
+                
+                if (!success) {
+                    throw new Error('All stream URLs failed');
+                }
+
+                await safePlay(video);
+                hideLoading();
+            } catch (err) {
+                console.error("Error loading channel:", err);
+                let errorMsg = `Failed to load ${channel.name}: `;
+                
+                if (err.message.includes('403') || err.message.includes('blocked')) {
+                    errorMsg += 'Geo-blocked. Try enabling proxy or VPN.';
+                } else if (err.message.includes('license')) {
+                    errorMsg += 'DRM license error. This channel may require Widevine.';
+                } else if (err.message.includes('404')) {
+                    errorMsg += 'Stream URL expired or not found.';
+                } else {
+                    errorMsg += err.message || 'Unknown error';
+                }
+                
+                showError(errorMsg);
+                hideLoading();
+            }
+        }
+
+        // ==================== RENDER CHANNEL LIST ====================
+        function renderChannels(channels) {
+            const container = document.getElementById('channelList');
+            container.innerHTML = '';
+            
+            channels.forEach(channel => {
+                const item = document.createElement('div');
+                item.className = 'channel-item';
+                if (currentChannel && currentChannel.name === channel.name) {
+                    item.classList.add('active');
+                }
+                
+                const logo = document.createElement('div');
+                logo.className = 'channel-logo';
+                logo.textContent = channel.name.charAt(0).toUpperCase();
+                
+                const details = document.createElement('div');
+                details.className = 'channel-details';
+                
+                const title = document.createElement('div');
+                title.className = 'channel-title';
+                title.textContent = channel.name;
+                
+                if (channel.drm) {
+                    const drmBadge = document.createElement('span');
+                    drmBadge.className = 'drm-badge';
+                    drmBadge.textContent = 'DRM';
+                    title.appendChild(drmBadge);
+                }
+                
+                // Add geo-restriction warning for Astro channels
+                if (channel.streamUrl && channel.streamUrl.includes('astro.com.my')) {
+                    const geoBadge = document.createElement('span');
+                    geoBadge.className = 'geo-badge';
+                    geoBadge.textContent = '🌏 Geo';
+                    title.appendChild(geoBadge);
+                }
+                
+                const category = document.createElement('div');
+                category.className = 'channel-category-badge';
+                category.textContent = channel.category || 'General';
+                
+                details.appendChild(title);
+                details.appendChild(category);
+                
+                item.appendChild(logo);
+                item.appendChild(details);
+                
+                item.addEventListener('click', () => loadChannel(channel));
+                container.appendChild(item);
+            });
+        }
+
+        // ==================== LOAD CHANNELS FROM JSON ====================
+        async function loadChannels() {
+            try {
+                showLoading('Loading channel list...');
+                const response = await fetch('https://raw.githubusercontent.com/Joker7263/Nba-live/refs/heads/main/all%20channel.json');
+                const data = await response.json();
+                
+                allChannels = data.channels || [];
+                
+                // Filter out unsupported streams
+                const validChannels = allChannels.filter(ch => 
+                    ch.streamUrl && 
+                    !ch.streamUrl.startsWith('rtmp') &&
+                    ch.type !== 'youtube-channel'
+                );
+                
+                renderChannels(validChannels);
+                
+                if (validChannels.length > 0) {
+                    await loadChannel(validChannels[0]);
+                }
+                
+                hideLoading();
+            } catch (err) {
+                console.error("Failed to load channels:", err);
+                showError("Failed to load channel list. Please check your internet connection.");
+                hideLoading();
+            }
+        }
+
+        // ==================== SEARCH FUNCTIONALITY ====================
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filtered = allChannels.filter(ch => 
+                ch.name.toLowerCase().includes(searchTerm) ||
+                (ch.category && ch.category.toLowerCase().includes(searchTerm))
+            );
+            renderChannels(filtered);
+        });
+
+        // ==================== PROXY SETTINGS ====================
+        document.getElementById('proxyBtn').addEventListener('click', () => {
+            document.getElementById('proxyModal').style.display = 'flex';
+            if (proxyConfig) {
+                document.getElementById('proxyUrlInput').value = proxyConfig.url;
+            }
+        });
+
+        document.getElementById('saveProxyBtn').addEventListener('click', () => {
+            const proxyUrl = document.getElementById('proxyUrlInput').value.trim();
+            if (proxyUrl) {
+                proxyConfig = { url: proxyUrl };
+                localStorage.setItem('proxyConfig', JSON.stringify(proxyConfig));
+                document.getElementById('proxyBtn').textContent = `🌐 Proxy: ON`;
+                document.getElementById('proxyStatus').textContent = `Using proxy: ${proxyUrl}`;
+                showError(`Proxy enabled: ${proxyUrl}\nReload current channel to apply.`);
+            } else {
+                proxyConfig = null;
+                localStorage.removeItem('proxyConfig');
+                document.getElementById('proxyBtn').textContent = `🌐 Proxy: OFF`;
+                document.getElementById('proxyStatus').textContent = '';
+                showError('Proxy disabled');
+            }
+            document.getElementById('proxyModal').style.display = 'none';
+        });
+
+        document.getElementById('cancelProxyBtn').addEventListener('click', () => {
+            document.getElementById('proxyModal').style.display = 'none';
+        });
+
+        // Close modal on outside click
+        document.getElementById('proxyModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('proxyModal')) {
+                document.getElementById('proxyModal').style.display = 'none';
+            }
+        });
+
+        // ==================== QUALITY SELECTION ====================
+        document.getElementById('qualityBtn').addEventListener('click', () => {
+            if (shakaPlayer) {
+                const tracks = shakaPlayer.getVariantTracks();
+                if (tracks.length > 0) {
+                    const qualities = [...new Set(tracks.map(t => t.height).filter(h => h))];
+                    if (qualities.length > 0) {
+                        alert(`Available qualities: ${qualities.join(', ')}p\nAuto quality is enabled by default.`);
+                    } else {
+                        alert('Quality selection not available for this stream');
+                    }
+                } else {
+                    alert('No quality variants found');
+                }
+            } else {
+                alert('Quality selection only available for DASH streams');
+            }
+        });
+
+        // ==================== INITIALIZE ====================
+        window.addEventListener('load', () => {
+            loadChannels();
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            destroyPlayers();
+        });
+    </script>
+</body>
+</html>
